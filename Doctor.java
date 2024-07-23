@@ -1,7 +1,9 @@
-import java.util.Date;
-import java.util.List;
-import java.util.ArrayList;
 import javax.swing.ImageIcon;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class Doctor {
     private String name;
@@ -9,7 +11,8 @@ public class Doctor {
     private int assignedShifts;
     private int totalShifts;
     private ImageIcon photo;
-    private List<Date> shiftDates;
+    private Map<Date, String> shiftDates; // Map to store shift dates along with departments
+    private List<String> departments;
 
     public Doctor(String name, List<Date> busyDays, int totalShifts) {
         this.name = name;
@@ -17,8 +20,11 @@ public class Doctor {
         this.assignedShifts = 0;
         this.totalShifts = totalShifts;
         this.photo = null;
-        this.shiftDates = new ArrayList<>();
+        this.shiftDates = new HashMap<>();
+        this.departments = new ArrayList<>();
     }
+
+    // getters and setters
 
     public String getName() {
         return name;
@@ -36,13 +42,13 @@ public class Doctor {
         return totalShifts;
     }
 
-    public List<Date> getShiftDates() {
+    public Map<Date, String> getShiftDates() {
         return shiftDates;
     }
 
-    public void assignShift(Date date) {
+    public void assignShift(Date date, String department) {
         this.assignedShifts++;
-        this.shiftDates.add(date);
+        this.shiftDates.put(date, department);
     }
 
     public void resetShifts() {
@@ -56,6 +62,14 @@ public class Doctor {
 
     public void setPhoto(ImageIcon photo) {
         this.photo = photo;
+    }
+
+    public List<String> getDepartments() {
+        return departments;
+    }
+
+    public void setDepartments(List<String> departments) {
+        this.departments = departments;
     }
 
     @Override
