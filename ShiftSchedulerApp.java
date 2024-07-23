@@ -1,5 +1,10 @@
 import com.toedter.calendar.JMonthChooser;
 import com.toedter.calendar.JYearChooser;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
 
 import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
@@ -7,6 +12,7 @@ import javax.swing.event.ListSelectionListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
@@ -35,6 +41,28 @@ public class ShiftSchedulerApp extends JFrame {
         setLayout(new BorderLayout());
 
         allDepartments = new ArrayList<>();
+
+        // Menu bar with Import and Export options
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem importItem = new JMenuItem("Import TXT");
+        JMenuItem exportItem = new JMenuItem("Export TXT");
+        importItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                importData();
+            }
+        });
+        exportItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                exportData();
+            }
+        });
+        fileMenu.add(importItem);
+        fileMenu.add(exportItem);
+        menuBar.add(fileMenu);
+        setJMenuBar(menuBar);
 
         // Left panel for displaying doctors and departments
         doctorListModel = new DefaultListModel<>();
@@ -309,10 +337,23 @@ public class ShiftSchedulerApp extends JFrame {
     }
 
     private void displayScheduleTable(List<Doctor> doctorList) {
-        String[] columnNames = new String[allDepartments.size() + 1];
+        // Count total number of columns required
+        int totalColumns = 1; // Initial column for days
+        Map<String, Integer> departmentColumns = new HashMap<>();
+        for (Department department : allDepartments) {
+            totalColumns += department.getDoctorsNeeded();
+            departmentColumns.put(department.getName(), department.getDoctorsNeeded());
+        }
+
+        // Prepare column names
+        String[] columnNames = new String[totalColumns];
         columnNames[0] = "Day";
-        for (int i = 0; i < allDepartments.size(); i++) {
-            columnNames[i + 1] = allDepartments.get(i).getName();
+        int colIndex = 1;
+        for (Department department : allDepartments) {
+            for (int i = 0; i < department.getDoctorsNeeded(); i++) {
+                columnNames[colIndex] = department.getName() + " (" + (i + 1) + ")";
+                colIndex++;
+            }
         }
 
         Calendar selectedMonth = Calendar.getInstance();
@@ -320,14 +361,19 @@ public class ShiftSchedulerApp extends JFrame {
         selectedMonth.set(Calendar.YEAR, yearChooser.getYear());
         int daysInMonth = selectedMonth.getActualMaximum(Calendar.DAY_OF_MONTH);
 
-        String[][] data = new String[daysInMonth][allDepartments.size() + 1];
+        String[][] data = new String[daysInMonth][totalColumns];
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 
         for (int day = 1; day <= daysInMonth; day++) {
             data[day - 1][0] = String.valueOf(day);
-            for (int j = 1; j <= allDepartments.size(); j++) {
+            for (int j = 1; j < totalColumns; j++) {
                 data[day - 1][j] = "";
             }
+        }
+
+        Map<String, Integer> departmentShiftCounters = new HashMap<>();
+        for (Department department : allDepartments) {
+            departmentShiftCounters.put(department.getName(), 0);
         }
 
         for (Doctor doctor : doctorList) {
@@ -338,16 +384,9 @@ public class ShiftSchedulerApp extends JFrame {
                 int day = shiftCalendar.get(Calendar.DAY_OF_MONTH);
 
                 String department = entry.getValue();
-                int departmentIndex = getDepartmentNames().indexOf(department) + 1;
-                data[day - 1][departmentIndex] += doctor.getName() + ", ";
-            }
-        }
-
-        for (int i = 0; i < daysInMonth; i++) {
-            for (int j = 1; j <= allDepartments.size(); j++) {
-                if (data[i][j].endsWith(", ")) {
-                    data[i][j] = data[i][j].substring(0, data[i][j].length() - 2);
-                }
+                int departmentIndex = getDepartmentIndex(departmentColumns, department) + departmentShiftCounters.get(department);
+                data[day - 1][departmentIndex] = doctor.getName();
+                departmentShiftCounters.put(department, (departmentShiftCounters.get(department) + 1) % departmentColumns.get(department));
             }
         }
 
@@ -356,8 +395,73 @@ public class ShiftSchedulerApp extends JFrame {
         JDialog dialog = new JDialog(this, "Scheduled Shifts", true);
         dialog.setSize(800, 600);
         dialog.add(scrollPane);
+
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem exportItem = new JMenuItem("Export to XLSX");
+        exportItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                exportTableToExcel(table, selectedMonth.get(Calendar.MONTH), selectedMonth.get(Calendar.YEAR));
+            }
+        });
+        fileMenu.add(exportItem);
+        menuBar.add(fileMenu);
+        dialog.setJMenuBar(menuBar);
+
         dialog.setVisible(true);
     }
+
+    private void exportTableToExcel(JTable table, int month, int year) {
+        JFileChooser fileChooser = new JFileChooser();
+        int returnValue = fileChooser.showSaveDialog(this);
+        if (returnValue == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            // Append .xlsx extension if not present
+            if (!selectedFile.getName().toLowerCase().endsWith(".xlsx")) {
+                selectedFile = new File(selectedFile.getParentFile(), selectedFile.getName() + ".xlsx");
+            }
+            try (FileOutputStream fos = new FileOutputStream(selectedFile)) {
+                Workbook workbook = new XSSFWorkbook();
+                Sheet sheet = workbook.createSheet("Duty List");
+
+                // Create header row
+                Row headerRow = sheet.createRow(0);
+                headerRow.createCell(0).setCellValue((month + 1) + ", " + year + " Duty List");
+
+                // Create column headers
+                Row columnHeaderRow = sheet.createRow(1);
+                for (int i = 0; i < table.getColumnCount(); i++) {
+                    columnHeaderRow.createCell(i).setCellValue(table.getColumnName(i));
+                }
+
+                // Create data rows
+                for (int i = 0; i < table.getRowCount(); i++) {
+                    Row row = sheet.createRow(i + 2);
+                    for (int j = 0; j < table.getColumnCount(); j++) {
+                        row.createCell(j).setCellValue(table.getValueAt(i, j).toString());
+                    }
+                }
+
+                workbook.write(fos);
+                workbook.close();
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    private int getDepartmentIndex(Map<String, Integer> departmentColumns, String department) {
+        int index = 1;
+        for (Map.Entry<String, Integer> entry : departmentColumns.entrySet()) {
+            if (entry.getKey().equals(department)) {
+                break;
+            }
+            index += entry.getValue();
+        }
+        return index;
+    }
+
 
     private void updateCalendarRenderer() {
         if (selectedDoctor != null) {
@@ -436,6 +540,73 @@ public class ShiftSchedulerApp extends JFrame {
             dialog.add(saveButton, BorderLayout.SOUTH);
 
             dialog.setVisible(true);
+        }
+    }
+
+    private void importData() {
+        JFileChooser fileChooser = new JFileChooser();
+        int returnValue = fileChooser.showOpenDialog(this);
+        if (returnValue == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            try (BufferedReader reader = new BufferedReader(new FileReader(selectedFile))) {
+                String line;
+                boolean isDepartmentsSection = false;
+                boolean isDoctorsSection = false;
+
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.equals("Departments:")) {
+                        isDepartmentsSection = true;
+                        isDoctorsSection = false;
+                    } else if (line.equals("Doctors:")) {
+                        isDepartmentsSection = false;
+                        isDoctorsSection = true;
+                    } else if (isDepartmentsSection && !line.isEmpty()) {
+                        String[] parts = line.split(",");
+                        String departmentName = parts[0].trim();
+                        int doctorsNeeded = Integer.parseInt(parts[1].trim());
+                        Department department = new Department(departmentName, doctorsNeeded);
+                        allDepartments.add(department);
+                        departmentListModel.addElement(department);
+                    } else if (isDoctorsSection && !line.isEmpty()) {
+                        String[] parts = line.split(",");
+                        String doctorName = parts[0].trim();
+                        int numberOfShifts = Integer.parseInt(parts[1].trim());
+                        List<String> assignedDepartments = Arrays.asList(parts[2].trim().split("\\|"));
+                        Doctor doctor = new Doctor(doctorName, new ArrayList<>(), numberOfShifts);
+                        doctor.setDepartments(assignedDepartments);
+                        doctorListModel.addElement(doctor);
+                    }
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+        }
+    }
+
+    private void exportData() {
+        JFileChooser fileChooser = new JFileChooser();
+        int returnValue = fileChooser.showSaveDialog(this);
+        if (returnValue == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = fileChooser.getSelectedFile();
+            // Append .txt extension if not present
+            if (!selectedFile.getName().toLowerCase().endsWith(".txt")) {
+                selectedFile = new File(selectedFile.getParentFile(), selectedFile.getName() + ".txt");
+            }
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(selectedFile))) {
+                writer.write("Departments:\n");
+                for (Department department : allDepartments) {
+                    writer.write(department.getName() + "," + department.getDoctorsNeeded() + "\n");
+                }
+                writer.write("\nDoctors:\n");
+                for (int i = 0; i < doctorListModel.getSize(); i++) {
+                    Doctor doctor = doctorListModel.getElementAt(i);
+                    writer.write(doctor.getName() + "," + doctor.getTotalShifts() + "," +
+                            String.join("|", doctor.getDepartments()) + "\n");
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
         }
     }
 
