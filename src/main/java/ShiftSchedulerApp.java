@@ -1,3 +1,4 @@
+import com.toedter.calendar.JDateChooser;
 import com.toedter.calendar.JMonthChooser;
 import com.toedter.calendar.JYearChooser;
 import org.apache.poi.ss.usermodel.Row;
@@ -24,6 +25,8 @@ public class ShiftSchedulerApp extends JFrame {
     private CustomJCalendar calendar;
     private JMonthChooser monthChooser;
     private JYearChooser yearChooser;
+    private JDateChooser startDateChooser;
+    private JDateChooser endDateChooser;
     private DefaultListModel<Doctor> doctorListModel;
     private JList<Doctor> doctorList;
     private JTextArea busyDaysArea;
@@ -148,6 +151,8 @@ public class ShiftSchedulerApp extends JFrame {
         doctorShiftsField = new JTextField(5);
         monthChooser = new JMonthChooser();
         yearChooser = new JYearChooser();
+        startDateChooser = new JDateChooser();
+        endDateChooser = new JDateChooser();
 
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -175,13 +180,25 @@ public class ShiftSchedulerApp extends JFrame {
 
         gbc.gridx = 0;
         gbc.gridy = 4;
+        northPanel.add(new JLabel("Start Date:"), gbc);
+        gbc.gridx = 1;
+        northPanel.add(startDateChooser, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        northPanel.add(new JLabel("End Date:"), gbc);
+        gbc.gridx = 1;
+        northPanel.add(endDateChooser, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 6;
         northPanel.add(new JLabel("Department Name:"), gbc);
         departmentNameField = new JTextField(15);
         gbc.gridx = 1;
         northPanel.add(departmentNameField, gbc);
 
         gbc.gridx = 0;
-        gbc.gridy = 5;
+        gbc.gridy = 7;
         northPanel.add(new JLabel("Doctors Needed:"), gbc);
         departmentDoctorsNeededField = new JTextField(5);
         gbc.gridx = 1;
@@ -195,7 +212,7 @@ public class ShiftSchedulerApp extends JFrame {
             }
         });
         gbc.gridx = 2;
-        gbc.gridy = 5;
+        gbc.gridy = 7;
         northPanel.add(addDepartmentButton, gbc);
 
         add(northPanel, BorderLayout.NORTH);
@@ -243,7 +260,6 @@ public class ShiftSchedulerApp extends JFrame {
             }
         });
     }
-
     private void addBusyDay() {
         Date selectedDate = stripTime(calendar.getDate());
         if (selectedDoctor != null && !selectedDoctor.getBusyDays().contains(selectedDate)) {
@@ -329,9 +345,26 @@ public class ShiftSchedulerApp extends JFrame {
         selectedMonth.set(Calendar.MONTH, monthChooser.getMonth());
         selectedMonth.set(Calendar.YEAR, yearChooser.getYear());
 
+        Date startDate = stripTime(startDateChooser.getDate());
+        Date endDate = stripTime(endDateChooser.getDate());
+
+        if (startDate == null || endDate == null) {
+            JOptionPane.showMessageDialog(this, "Please select a valid start and end date.");
+            return;
+        }
+
+        // Clear previous assignments
+        for (Doctor doctor : Collections.list(doctorListModel.elements())) {
+            doctor.getShiftDates().clear();
+        }
+
         List<Doctor> doctorList = Collections.list(doctorListModel.elements());
-        ShiftScheduler scheduler = new ShiftScheduler(doctorList, selectedMonth, allDepartments); // Assuming shifts are based on individual doctor needs
-        scheduler.distributeShifts();
+        ShiftScheduler scheduler = new ShiftScheduler(doctorList, selectedMonth, allDepartments, startDate, endDate);
+        if (scheduler.distributeShifts()) {
+            System.out.println("Shifts distributed successfully.");
+        } else {
+            System.out.println("Failed to distribute shifts.");
+        }
 
         displayScheduleTable(doctorList);
     }
